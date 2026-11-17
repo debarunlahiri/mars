@@ -2,12 +2,49 @@
 
 Give it a question; it plans, researches the live web in parallel, **reads the actual pages**, verifies every claim against the source text, and writes a cited Markdown report that a critic reviews. Built with **LangGraph + FastAPI**; works with Anthropic, OpenAI or Gemini, and runs fully offline in mock mode.
 
+```mermaid
+flowchart TD
+    Q([Question]) --> P[Planner]
+    P --> R["Researchers x N, in parallel<br/>search, read pages, extract claims + quotes, verify"]
+    R --> A[Analyst]
+    A -->|"gaps found and budget left"| R
+    A -->|"require_approval"| H{{"Human approval"}}
+    A -->|"default"| W[Writer]
+    H -->|approved| W
+    H -->|rejected| F([Report])
+    W --> C[Critic]
+    C -->|"issues found and budget left"| W
+    C -->|"approved or budget spent"| F
+    A -->|"no usable evidence"| F
 ```
-                      ┌────────────── follow-up round (gaps found, budget left) ──────────────┐
-                      ▼                                                                        │
-question ─▶ Planner ─▶ Researcher ×N (parallel) ─▶ Analyst ─┬─▶ [Human approval] ─▶ Writer ─▶ Critic ─┬─▶ Report
-                          search → read pages → extract       └─────────────────────▲──── revise ◀──────┘
-                          claims + verbatim quotes → verify
+
+The same flow as plain text, for viewers that do not render Mermaid:
+
+```
+Question
+   |
+   v
+Planner
+   |
+   v
+Researchers x N (parallel)  <---------+
+  search > read pages >               |  gaps found
+  claims + quotes > verify            |  and budget left
+   |                                  |
+   v                                  |
+Analyst ------------------------------+
+   |
+   +--- require_approval ---> Human approval --- rejected ---> Report
+   |                               |
+   | (default)                     | approved
+   v                               v
+Writer <---------------------------+
+   |  ^
+   v  |  issues found and budget left
+Critic
+   |  approved or budget spent
+   v
+Report
 ```
 
 | Agent | Role | Model tier |
@@ -26,7 +63,7 @@ Python 3.11+, one LLM API key (Anthropic, OpenAI or Google) for real research, a
 
 ```bash
 make install                         # venv + editable install (Anthropic + dev tools)
-cp .env.example .env                 # add ANTHROPIC_API_KEY (+ optional TAVILY_API_KEY)
+cp .env.example .env                 # add ONE of ANTHROPIC_API_KEY / GOOGLE_API_KEY / OPENAI_API_KEY (+ optional TAVILY_API_KEY)
 .venv/bin/mars doctor                # verifies LLM, search and page fetching with your real keys
 
 .venv/bin/mars ask "Compare the current approaches to RAG evaluation"
@@ -36,7 +73,9 @@ cp .env.example .env                 # add ANTHROPIC_API_KEY (+ optional TAVILY_
 make test                            # 79 tests, offline (incl. an embedded real Postgres+pgvector)
 ```
 
-Not using `make`? `python3 -m venv .venv && .venv/bin/pip install -e ".[anthropic,dev]"` does the same (`[openai]` / `[google]` for the other providers).
+Not using `make`? `python3 -m venv .venv && .venv/bin/pip install -e ".[anthropic,dev]"` does the same. Use `.[google,dev]` for Gemini or `.[openai,dev]` for OpenAI.
+
+**Using Gemini:** install the `google` extra, put `GOOGLE_API_KEY=...` in `.env` and set `MARS_PROVIDER=google_genai`. Defaults are `gemini-3.5-flash-lite` (planner, researchers) and `gemini-3.8-flash` (analyst, writer, critic), with Google embeddings (`gemini-embedding-001`, 768 dimensions) for storage. Gemini model names change quickly and old ones stop working for new accounts; if `mars doctor` reports a 404 for a model, pick a current one with `MARS_FAST_MODEL` / `MARS_STRONG_MODEL`. Keys stay in `.env`, which is git-ignored.
 
 With no API keys, `MARS_PROVIDER=auto` falls back to a deterministic **mock** LLM and search (placeholder text, not real research). Set `MARS_PROVIDER=mock MARS_SEARCH_PROVIDER=ddg` to exercise real web search and page reading without an LLM key.
 
@@ -48,13 +87,15 @@ With no API keys, `MARS_PROVIDER=auto` falls back to a deterministic **mock** LL
 | LLMs fabricate or misattribute claims | Each claim needs URL(s) **and a verbatim quote**; quotes are fuzzy-matched to the page text and unverifiable claims are dropped (`dropped_claims`) |
 | Web pages contain prompt injections | Web text is fenced as untrusted, stripped of control chars, cannot close its own fence; injected claims still need a real supporting quote |
 | Fetching arbitrary URLs is an SSRF risk | Only public http(s); private/loopback/link-local/metadata IPs blocked; every redirect hop re-validated; robots.txt honoured |
-| Search providers rate-limit or fail | Retries with backoff + jitter, Tavily → DuckDuckGo fallback, result dedupe/tracking-param stripping, domain blocklist, TTL cache |
+| Search providers rate-limit or fail | Retries with backoff + jitter, Tavily → DuckDuckGo fallback, DuckDuckGo calls serialised and spaced (it throttles bursts), result dedupe/tracking-param stripping, domain blocklist, TTL cache. DuckDuckGo is still best-effort; set `TAVILY_API_KEY` for dependable search |
 | LLM calls time out or return malformed JSON | Per-call timeout, retries on malformed structured output, usage tracking; the LLM critic degrades to deterministic checks if it keeps failing |
 | One bad source/task shouldn't kill a run | Failures become per-task errors; the report includes `warnings` (failed tasks, dropped claims, single-domain evidence, critic not satisfied) |
 | Runs can hang or cost too much | Run deadline, bounded rounds/revisions/tasks/concurrency, token + call + page counters in `report.usage` |
 | "Latest" / "in 2026" questions | Current date is injected into every prompt; source publish dates are carried through when the search provider supplies them |
 
 ## API
+
+Full reference with schemas, SSE events, errors and client examples: **[docs/api.md](docs/api.md)**. A running server also serves interactive docs at `/docs` (Swagger UI) and `/redoc`.
 
 | Endpoint | Purpose |
 |---|---|
@@ -136,6 +177,7 @@ src/mars/
 tests/unit/        core, tools, agents, embeddings (no network)
 tests/integration/ graph, API, storage (SQLite + embedded Postgres)
 data/eval.json     sample evaluation dataset
+docs/api.md            API reference (endpoints, events, schemas, examples)
 docs/architecture.md   evidence pipeline, dependency direction, known limits
 ```
 

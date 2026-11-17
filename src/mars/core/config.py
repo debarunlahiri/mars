@@ -46,7 +46,7 @@ class Settings(BaseSettings):
 
     # --- search & page fetching ---
     search_provider: Literal["auto", "tavily", "ddg", "mock"] = "auto"
-    search_attempts: int = 2
+    search_attempts: int = 3
     search_cache_ttl: float = 900.0  # seconds; 0 disables
     blocked_domains: str = "pinterest.com,facebook.com,instagram.com,tiktok.com,x.com"
     fetch_pages: bool = True  # read full pages, not just search snippets

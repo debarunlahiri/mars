@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from typing import Protocol
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -95,13 +96,27 @@ class TavilySearch:
 
 
 class DuckDuckGoSearch:
+    """Keyless scraping backend. It throttles bursts, so calls are serialised and spaced out."""
+
+    def __init__(self, min_interval: float = 1.5):
+        self.min_interval = min_interval
+        self._lock = asyncio.Lock()
+        self._last = 0.0
+
     async def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
         from ddgs import DDGS
 
         def _run() -> list[dict]:
             return list(DDGS(timeout=15).text(query, max_results=max_results))
 
-        rows = await asyncio.to_thread(_run)
+        async with self._lock:
+            wait = self._last + self.min_interval - time.monotonic()
+            if wait > 0:
+                await asyncio.sleep(wait)
+            try:
+                rows = await asyncio.to_thread(_run)
+            finally:
+                self._last = time.monotonic()
         return [
             SearchResult(title=r.get("title", ""), url=r["href"], snippet=r.get("body", ""))
             for r in rows

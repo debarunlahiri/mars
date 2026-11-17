@@ -53,7 +53,21 @@ def create_app(settings: Settings | None = None, service: ResearchService | None
             else:
                 await app.state.service.aclose()
 
-    app = FastAPI(title="MARS - Multi-Agent Research System", version=__version__, lifespan=lifespan)
+    app = FastAPI(
+        title="MARS - Multi-Agent Research System",
+        version=__version__,
+        description=(
+            "Plans, researches the web, verifies claims against source text and writes cited reports.\n\n"
+            "Authenticate with `X-API-Key: <key>` or `Authorization: Bearer <key>` when "
+            "`MARS_API_KEYS` is set. Full reference: docs/api.md."
+        ),
+        openapi_tags=[
+            {"name": "research", "description": "Run research jobs (blocking or streaming) and approve paused runs."},
+            {"name": "reports", "description": "Stored reports and semantic search (needs storage configured)."},
+            {"name": "ops", "description": "Health."},
+        ],
+        lifespan=lifespan,
+    )
     app.state.settings = s
     app.state.limiter = RateLimiter(s.rate_limit_per_min)
 

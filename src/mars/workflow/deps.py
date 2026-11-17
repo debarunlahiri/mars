@@ -44,7 +44,11 @@ def build_search(s: Settings) -> SearchTool:
     if backend == "ddg":
         chain = chain[-1:]
     return ResilientSearch(
-        chain, s.blocked_domain_list, attempts=s.search_attempts, cache_ttl=s.search_cache_ttl
+        chain,
+        s.blocked_domain_list,
+        attempts=s.search_attempts,
+        cache_ttl=s.search_cache_ttl,
+        base_delay=2.0,
     )
 
 
