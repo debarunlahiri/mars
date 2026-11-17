@@ -1,0 +1,23 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: mars
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mars}
+      POSTGRES_DB: mars
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mars -d mars"]
+      interval: 5s
+      retries: 10
+  mars:
+    build: .
+    ports: ["8000:8000"]
+    env_file: .env
+    environment:
+      MARS_DATABASE_URL: postgresql://mars:${POSTGRES_PASSWORD:-mars}@db:5432/mars
+    depends_on:
+      db: { condition: service_healthy }
+    restart: unless-stopped
+volumes:
+  pgdata:

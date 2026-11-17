@@ -1,0 +1,4 @@
+[
+  {"question": "Compare the current approaches to RAG evaluation", "expected_topics": ["faithfulness", "retrieval"]},
+  {"question": "Pros and cons of microservices vs modular monoliths", "expected_topics": ["microservices", "monolith"]}
+]
