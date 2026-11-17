@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from .. import __version__
 from ..core.config import Settings, get_settings
@@ -18,6 +18,7 @@ from ..workflow.service import ResearchService
 from .reports import router as reports_router
 from .routes import router
 from .security import RateLimiter
+from .ui import INDEX_HTML
 
 log = get_logger("api")
 
@@ -99,6 +100,10 @@ def create_app(settings: Settings | None = None, service: ResearchService | None
     async def http_error(_: Request, exc: HTTPException):
         detail = exc.detail if isinstance(exc.detail, dict) else {"code": "error", "detail": exc.detail}
         return JSONResponse(detail, status_code=exc.status_code, headers=exc.headers)
+
+    @app.get("/", include_in_schema=False)
+    async def index():
+        return HTMLResponse(INDEX_HTML)
 
     app.include_router(router)
     app.include_router(reports_router)
