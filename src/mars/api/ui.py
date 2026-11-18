@@ -64,6 +64,7 @@ summary{cursor:pointer;font-weight:600}
   <div style="margin-top:8px;font-size:12px"><a href="/docs" target="_blank" style="color:var(--mut)">API docs ↗</a></div></footer>
 </aside>
 <main><div class="wrap">
+ <div id="mock" class="card warn" style="display:none"><b>Demo mode:</b> no LLM API key is configured on the server, so results are placeholder text. Set <code>ANTHROPIC_API_KEY</code>, <code>OPENAI_API_KEY</code> or <code>GOOGLE_API_KEY</code> (and optionally <code>TAVILY_API_KEY</code>) in your deployment's environment variables, then redeploy.</div>
  <div class="card ask">
   <textarea id="q" maxlength="1000" placeholder="What do you want researched?  (Ctrl/⌘ + Enter to run)"></textarea>
   <div class="bar"><label class="chk"><input type="checkbox" id="appr"> Review findings before writing</label>
@@ -183,6 +184,7 @@ $("q").addEventListener("keydown",e=>{if(e.key=="Enter"&&(e.ctrlKey||e.metaKey))
 
 async function boot(){const h=$("health");
  try{const r=await fetch("/health");const d=await r.json();h.innerHTML=`<span class="dot on"></span>${esc(d.provider||"ok")} · ${esc(d.search||"")} · ${d.active_runs} active`;
+  $("mock").style.display=(d.provider==="mock")?"":"none";
   if(d.storage!=="off"){const x=await fetch("/reports?limit=30",{headers:hdr()});if(x.ok){state.server=true;const list=await x.json();
    const known=new Set(state.hist.map(h=>h.id));list.forEach(s=>{if(!known.has(s.id))state.hist.push({id:s.id,question:s.question,status:s.status,at:Date.parse(s.created_at)||Date.now()})});
    state.hist.sort((a,b)=>b.at-a.at);renderHist()}}}
