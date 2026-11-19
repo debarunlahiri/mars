@@ -43,3 +43,5 @@ coverage.xml
 *.swp
 .DS_Store
 Thumbs.db
+mars-docs.db*
+knowledge/

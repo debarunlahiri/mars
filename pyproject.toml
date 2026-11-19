@@ -26,6 +26,7 @@ dependencies = [
   "psycopg[binary,pool]>=3.2",
   "pgvector",
   "numpy",
+  "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +34,12 @@ anthropic = ["langchain-anthropic"]
 openai = ["langchain-openai"]
 google = ["langchain-google-genai"]
 local-embeddings = ["fastembed"]
+# Office/PDF readers for internal documents
+documents = ["pypdf>=4", "python-docx>=1", "python-pptx>=1", "openpyxl>=3.1"]
+# GPU-capable local embeddings (torch picks CUDA on NVIDIA, MPS on Apple silicon)
+gpu = ["sentence-transformers>=3"]
+# offline image text recognition (fallback when the LLM has no vision)
+ocr = ["rapidocr-onnxruntime"]
 dev = ["pytest", "pytest-asyncio", "ruff", "pgserver"]
 
 [project.scripts]

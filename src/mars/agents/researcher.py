@@ -54,6 +54,17 @@ async def _recall(deps: Deps, query: str, current: list[SearchResult]) -> list[S
     return list(grouped.values())
 
 
+async def _internal(deps: Deps, query: str, doc_ids: list[str] | None = None) -> list[SearchResult]:
+    """Passages from the user's indexed documents (best effort, never a failure)."""
+    if deps.docs is None or not deps.settings.use_documents:
+        return []
+    try:
+        return await deps.docs.evidence(query, doc_ids)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("document search failed: %s: %s", type(exc).__name__, str(exc)[:150])
+        return []
+
+
 def _verify(key_points: list[KeyPoint], results: list[SearchResult]) -> tuple[list[KeyPoint], int]:
     """Hallucination control: keep a claim only if it cites a retrieved URL AND its quote is
     actually found in that source's text. Returns (verified points, number dropped)."""
@@ -71,16 +82,26 @@ def _verify(key_points: list[KeyPoint], results: list[SearchResult]) -> tuple[li
     return kept, dropped
 
 
-async def research(deps: Deps, question: str, task: ResearchTask) -> Finding:
+async def research(deps: Deps, question: str, task: ResearchTask, scope: dict | None = None) -> Finding:
     # Failures are data, not exceptions: one bad task must not sink the whole run.
     try:
         async with deps.sem:  # bounds parallel search + fetch + LLM pressure
-            results = await deps.search.search(task.query, deps.settings.max_results)
+            scope = scope or {}
+            internal = await _internal(deps, task.query, scope.get("document_ids") or None)
+            results: list[SearchResult] = []
+            if scope.get("web", deps.settings.web_search):
+                try:
+                    results = await deps.search.search(task.query, deps.settings.max_results)
+                except Exception as exc:  # noqa: BLE001
+                    if not internal:
+                        raise
+                    log.warning("web search failed, using internal documents only: %s", exc)
             memory = await _recall(deps, task.query, results)
-            if not results and not memory:
+            if not results and not memory and not internal:
                 return Finding(task=task, error="search returned no results")
             results, fetched = await _read_pages(deps, results)
-            results = results + memory  # web evidence first; remembered quotes fill the budget after
+            # The user's own documents come first so they win the evidence budget.
+            results = internal + results + memory
             out = await deps.fast.structured(
                 TaskFindings,
                 stamped(RESEARCHER_SYSTEM),

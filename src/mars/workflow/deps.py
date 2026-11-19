@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass, field
 
 from ..core.config import Settings, get_settings
+from ..docs import DocumentService
 from ..llm import LLM, LangChainLLM, MockLLM
 from ..storage import Storage
 from ..tools import (
@@ -26,9 +27,12 @@ class Deps:
     search: SearchTool
     fetcher: PageFetcher | None = None  # None = snippets only
     storage: Storage | None = None  # durable reports + vector memory (set by the runtime)
+    docs: DocumentService | None = None  # internal documents index (set by the runtime)
     sem: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(4))
 
     async def aclose(self) -> None:
+        if self.docs:
+            await self.docs.aclose()
         if self.fetcher:
             await self.fetcher.aclose()
 

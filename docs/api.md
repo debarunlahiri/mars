@@ -41,6 +41,7 @@ If `MARS_API_KEYS` is empty the API is **unauthenticated** (the server logs a wa
 | 429 | `error` | Rate limit exceeded; wait `Retry-After` seconds |
 | 500 | `internal_error` | Unexpected failure; quote the `error_id` |
 | 501 | `storage_disabled` | Report/memory endpoints called without `MARS_DATABASE_URL` or `MARS_STORAGE_DB` |
+| 501 | `documents_disabled` | Document endpoints called without `MARS_DOCS_DB` |
 | 502 | `search_failed` | Reserved for search failures that abort a run (individual task failures do not abort; see `report.errors`) |
 | 503 | `error` | Server busy (`MARS_MAX_CONCURRENT_RUNS` reached); wait `Retry-After` |
 | 504 | `run_timeout` | Run exceeded `MARS_RUN_TIMEOUT` seconds |
@@ -211,6 +212,61 @@ Returns an array of hits, best first:
 
 Score quality depends on the embedder. The offline `hash` embedder only matches shared words; OpenAI, Google or fastembed embeddings match meaning. With `MARS_USE_MEMORY=true` the same index is also used automatically during research.
 
+## Internal documents
+
+Upload your own files; research then cites them next to web sources. These endpoints need `MARS_DOCS_DB` (otherwise `501 documents_disabled`) and share the per-key rate limit. All API keys see all documents.
+
+### `POST /documents`
+
+`multipart/form-data` with one or more `files` (up to 20 per request, each up to `MARS_MAX_UPLOAD_MB`). Supported: PDF, `.docx`, `.pptx`, `.xlsx`, images (PNG, JPEG, WebP, GIF, BMP, TIFF), and text, Markdown, CSV, JSON, HTML. Legacy `.doc`/`.ppt`/`.xls` are rejected. Each file is reported separately, so one bad file does not fail the batch:
+
+```json
+[{"name": "q3.pdf", "status": "indexed",
+  "document": {"id": "9f2c1a7b03de", "name": "q3.pdf", "kind": "pdf", "size": 182044, "chunks": 41,
+               "created_at": "2026-11-19T10:02:11Z", "notes": []}, "error": null},
+ {"name": "q3-copy.pdf", "status": "duplicate", "document": {"id": "9f2c1a7b03de", "...": "..."}, "error": null},
+ {"name": "x.mp4", "status": "failed", "document": null, "error": "unsupported file type .mp4; ..."}]
+```
+
+`status` is `indexed`, `duplicate` (same content already indexed) or `failed`. `notes` carries non-fatal issues such as scanned pages that could not be read.
+
+### `GET /documents`
+
+Array of `{id, name, kind, size, chunks, created_at, notes}`, newest first.
+
+### `GET /documents/search`
+
+| Query | Default | Notes |
+|---|---|---|
+| `q` | required | 2 to 500 characters |
+| `k` | `5` | 1 to 20 passages |
+
+Returns `[{"doc_id", "name", "label", "text", "score"}]`; `label` is the page, slide or sheet (for example `p3`, `slide 2`, `sheet Sales`).
+
+### `GET /documents/sync` and `POST /documents/sync`
+
+With `MARS_DOCS_DIR` set, MARS keeps the index in step with that folder by itself: a scan at startup and then every `MARS_DOCS_SYNC_INTERVAL` seconds adds new files, re-indexes changed ones and removes deleted or renamed ones. Documents uploaded through `POST /documents` are never removed by it.
+
+`GET` returns `{"enabled", "folder", "interval_seconds", "watching", "scanning", "last"}` (`{"enabled": false}` when no folder is configured). `POST` scans right now and returns the result (`409 sync_disabled` without a folder):
+
+```json
+{"started_at": "2026-11-19T10:05:00Z", "finished_at": "2026-11-19T10:05:02Z",
+ "added": ["q3/report.pdf"], "updated": [], "removed": ["old/plan.docx"], "unchanged": 12,
+ "duplicates": [], "failed": {"scan.png": "no text could be read from this image: ..."}, "error": null}
+```
+
+Paths are relative to the watched folder. A file listed under `failed` is not retried until it changes.
+
+### `GET /documents/formats`
+
+Supported extensions plus the embedding model, the compute device (`cuda`, `mps` or `cpu`) and whether image reading by the LLM is available.
+
+### `DELETE /documents/{doc_id}`
+
+Removes the document and its passages. `204`, or `404`.
+
+In reports, internal sources have URLs like `doc://9f2c1a7b03de/q3.pdf`. Their quotes are verified against the file text exactly like web quotes.
+
 ## Health
 
 ### `GET /health`
@@ -219,10 +275,10 @@ Unauthenticated.
 
 ```json
 {"status": "ok", "provider": "google_genai", "search": "ddg", "active_runs": 0,
- "storage": "postgres", "persistent": true}
+ "storage": "postgres", "persistent": true, "documents": true, "web_search": true}
 ```
 
-`storage` is `postgres`, `sqlite` or `off`. `persistent` is true when paused runs survive a restart.
+`storage` is `postgres`, `sqlite` or `off`. `persistent` is true when paused runs survive a restart. `documents` is true when `MARS_DOCS_DB` is set; `web_search` mirrors `MARS_WEB_SEARCH`.
 
 ## Data models
 

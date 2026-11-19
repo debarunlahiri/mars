@@ -28,6 +28,7 @@ ALLOWED_TYPES = [
 class ResearchState(TypedDict, total=False):
     question: str
     require_approval: bool
+    scope: dict  # {"document_ids": [...], "web": bool}: files attached to the question
     plan: list[ResearchTask]
     # Reducer: parallel researchers (and later rounds) all append to the same list.
     findings: Annotated[list[Finding], operator.add]

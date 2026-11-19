@@ -76,12 +76,28 @@ class Settings(BaseSettings):
     # --- storage & memory ---
     database_url: str = ""  # postgresql://... -> reports, vectors AND checkpoints in Postgres (pgvector)
     storage_db: str = ""  # SQLite file for reports + vectors when no database_url
-    embedding_provider: Literal["auto", "hash", "openai", "google", "fastembed"] = "auto"
+    embedding_provider: Literal["auto", "hash", "openai", "google", "fastembed", "local"] = "auto"
     embedding_model: str = ""
     embedding_dim: int = 0  # 0 = provider default
     use_memory: bool = False  # let researchers reuse quotes from earlier research
     memory_top_k: int = 3
     memory_min_score: float = 0.4
+
+    # --- hardware (local embedding models, OCR) ---
+    device: Literal["auto", "cuda", "mps", "cpu"] = "auto"  # auto: NVIDIA GPU > Apple GPU > CPU
+
+    # --- internal documents (PDF, Word, PowerPoint, Excel, text, images) ---
+    docs_db: str = ""  # SQLite file for the document index; empty = documents disabled
+    docs_dir: str = ""  # folder kept in sync with the index (add / update / remove automatically)
+    docs_sync_interval: float = 30.0  # seconds between scans; 0 = scan only at startup and on request
+    use_documents: bool = True  # researchers search the indexed documents
+    web_search: bool = True  # False = answer from internal documents only
+    docs_top_k: int = 4  # documents (each with its best passages) given to a researcher
+    docs_min_score: float = 0.15
+    chunk_chars: int = 1200
+    chunk_overlap: int = 150
+    max_upload_mb: int = 25
+    vision_images: bool = True  # describe/transcribe images with the LLM (needs a real provider)
 
     # --- logging ---
     log_level: str = "INFO"

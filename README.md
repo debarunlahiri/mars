@@ -105,6 +105,8 @@ Full reference with schemas, SSE events, errors and client examples: **[docs/api
 | `POST /research/{thread_id}/approve/stream` | Same, as SSE |
 | `GET /reports`, `GET /reports/{id}`, `DELETE /reports/{id}` | Stored reports (needs storage configured, else 501) |
 | `GET /memory/search?q=...&k=5` | Semantic search over verified quotes from all stored reports |
+| `POST /documents` (multipart `files`), `GET /documents`, `GET /documents/search`, `DELETE /documents/{id}` | Internal documents (needs `MARS_DOCS_DB`, else 501) |
+| `GET /documents/sync`, `POST /documents/sync` | Auto-sync status / scan the watched folder now |
 | `GET /health` | Provider, search backend, storage mode, active runs (unauthenticated) |
 
 Errors are `{"code", "detail"}` with meaningful statuses: 401 bad key, 404 unknown thread, 422 invalid input, 429 rate limited, 503 busy (`Retry-After` set), 504 run timeout. Unexpected failures return a generic message plus an `error_id` that matches the server log; internals are never leaked.
@@ -116,6 +118,31 @@ curl -N -X POST localhost:8000/research/stream -H 'content-type: application/jso
 ```
 
 **Production settings:** set `MARS_API_KEYS`, `MARS_DATABASE_URL` (Postgres, so reports and paused approvals survive restarts; `MARS_CHECKPOINT_DB` is the SQLite alternative for checkpoints only), `MARS_LOG_JSON=true`, and put it behind TLS.
+
+## Internal documents + GPU
+
+MARS can research your own files alongside the web. Enable it with `MARS_DOCS_DB=./mars-docs.db`, then upload through the API (`POST /documents`) or the CLI:
+
+```bash
+pip install -e '.[documents]'      # pypdf, python-docx, python-pptx, openpyxl
+mars ingest ./reports ./slides.pptx ./budget.xlsx ./whiteboard.png
+mars ask "What did our Q3 report conclude about churn, and how does that compare with industry trends?"
+```
+
+| Format | How it is read |
+|---|---|
+| PDF | text layer per page; scanned pages go through the vision LLM / OCR |
+| Word `.docx` | headings, paragraphs, tables, embedded images |
+| PowerPoint `.pptx` | per-slide text, tables, speaker notes, pictures |
+| Excel `.xlsx` | per-sheet rows, each value tagged with its column header |
+| Images (PNG/JPEG/WebP/GIF/BMP/TIFF) | vision LLM transcribes text and describes charts; `pip install '.[ocr]'` is the offline fallback |
+| Text, Markdown, CSV, JSON, HTML | decoded directly |
+
+Passages are embedded, indexed, and handed to the researchers **before** web results. They go through the same quote verification as web pages, so an internal claim is kept only if its quote is really in the file. Sources appear as `doc://<id>/<file>` with the page/slide/sheet in the quoted passage. Set `MARS_WEB_SEARCH=false` to answer from your documents only. Uploaded text is treated as untrusted, like web text.
+
+**Auto-sync.** Set `MARS_DOCS_DIR=./knowledge` and drop files in that folder: the server scans it at startup and every `MARS_DOCS_SYNC_INTERVAL` seconds, indexes new files, re-indexes changed ones and removes deleted or renamed ones, with no manual step. Files whose content is already indexed are skipped, and a file that failed is retried only after it changes. `GET /documents/sync` shows status and the last result, `POST /documents/sync` (or `mars sync`) scans immediately. Files uploaded through the API are never touched by the sync. An index created by an older version is migrated automatically on startup.
+
+**GPU.** Local embedding models run on an NVIDIA GPU (`cuda`) or the Mac's GPU (`mps`) automatically (`MARS_DEVICE=auto|cuda|mps|cpu`). Install `pip install -e '.[gpu]'` and set `MARS_EMBEDDING_PROVIDER=local` (it is picked by `auto` when installed). LLM calls go to the provider's API, so they do not use your GPU. `mars doctor` prints the device in use.
 
 ## Configuration
 
@@ -133,6 +160,15 @@ All settings are environment variables prefixed `MARS_` (a `.env` file is loaded
 | `MARS_DATABASE_URL` | empty | Postgres + pgvector for reports, vectors and checkpoints |
 | `MARS_STORAGE_DB` | empty | SQLite file for reports + vectors when there is no Postgres |
 | `MARS_USE_MEMORY` | `false` | Reuse verified quotes from earlier reports |
+| `MARS_DOCS_DB` | empty | SQLite file for the internal-document index; **empty disables documents** |
+| `MARS_DOCS_DIR` / `MARS_DOCS_SYNC_INTERVAL` | empty / `30` | Folder kept in sync with the index automatically (add, update, remove) / seconds between scans |
+| `MARS_USE_DOCUMENTS` | `true` | Researchers search the indexed documents |
+| `MARS_WEB_SEARCH` | `true` | `false` answers from your documents only |
+| `MARS_DOCS_TOP_K` / `MARS_DOCS_MIN_SCORE` | `4` / `0.15` | Documents given to a researcher / minimum similarity |
+| `MARS_MAX_UPLOAD_MB` | `25` | Per-file upload limit |
+| `MARS_VISION_IMAGES` | `true` | Read images and scanned pages with the LLM |
+| `MARS_DEVICE` | `auto` | `auto` / `cuda` (NVIDIA) / `mps` (Apple GPU) / `cpu` for local embedding models |
+| `MARS_EMBEDDING_PROVIDER` | `auto` | `hash` / `openai` / `google` / `fastembed` / `local` (GPU-capable, needs `.[gpu]`) |
 
 ## Storage: Postgres + vector search
 

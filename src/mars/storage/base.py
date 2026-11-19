@@ -35,7 +35,7 @@ def chunks_from_report(report: Report) -> list[Chunk]:
     for s in report.sources:
         for quote in s.quotes:
             key = (s.url, quote)
-            if quote.strip() and key not in seen:
+            if quote.strip() and key not in seen and not s.url.startswith("doc://"):
                 seen.add(key)
                 chunks.append(Chunk(text=quote, url=s.url, title=s.title, published=s.published))
     return chunks

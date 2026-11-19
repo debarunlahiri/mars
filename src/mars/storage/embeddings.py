@@ -61,16 +61,54 @@ class LangChainEmbedder:
 class FastEmbedder:
     """Local ONNX model (no API key, no network after the first download)."""
 
-    def __init__(self, model: str = "BAAI/bge-small-en-v1.5"):
+    def __init__(self, model: str = "BAAI/bge-small-en-v1.5", device: str = "cpu"):
         from fastembed import TextEmbedding
 
-        self._model = TextEmbedding(model_name=model)
+        from ..docs.device import onnx_providers, resolve_device
+
+        # With `fastembed-gpu` installed, CUDA is used; CoreML on Apple silicon; otherwise CPU.
+        providers = onnx_providers(resolve_device(device))
+        try:
+            self._model = TextEmbedding(model_name=model, providers=providers)
+        except Exception:  # noqa: BLE001 - provider not usable: fall back to the default (CPU)
+            self._model = TextEmbedding(model_name=model)
         self.name = f"fastembed:{model}"
         self.dim = len(next(iter(self._model.embed(["probe"]))))
 
     async def embed(self, texts: list[str]) -> np.ndarray:
         vecs = await asyncio.to_thread(lambda: list(self._model.embed(texts)))
         return _normalize(np.array(vecs, dtype=np.float32))
+
+
+class LocalEmbedder:
+    """sentence-transformers model that runs on the NVIDIA GPU (cuda), Apple GPU (mps) or CPU."""
+
+    def __init__(self, model: str = "BAAI/bge-small-en-v1.5", device: str = "auto"):
+        from sentence_transformers import SentenceTransformer
+
+        from ..docs.device import describe_device, resolve_device
+
+        self.device = resolve_device(device)
+        self._model = SentenceTransformer(model, device=self.device)
+        self.name = f"local:{model}"
+        self.dim = int(self._model.get_sentence_embedding_dimension())
+        log.info("local embeddings %s on %s", model, describe_device(self.device))
+
+    def _encode(self, texts: list[str]) -> np.ndarray:
+        return self._model.encode(texts, batch_size=64, convert_to_numpy=True, show_progress_bar=False)
+
+    async def embed(self, texts: list[str]) -> np.ndarray:
+        if not texts:
+            return np.zeros((0, self.dim), dtype=np.float32)
+        return _normalize(np.asarray(await asyncio.to_thread(self._encode, texts), dtype=np.float32))
+
+
+def _has(module: str) -> bool:
+    try:
+        __import__(module)
+        return True
+    except ImportError:
+        return False
 
 
 def build_embedder(s: Settings) -> Embedder:
@@ -83,13 +121,14 @@ def build_embedder(s: Settings) -> Embedder:
             choice = "google"
         elif provider == "openai" or os.environ.get("OPENAI_API_KEY"):
             choice = "openai"
+        elif _has("sentence_transformers") and s.device != "cpu":
+            choice = "local"  # GPU-capable
+        elif _has("fastembed"):
+            choice = "fastembed"
+        elif _has("sentence_transformers"):
+            choice = "local"
         else:
-            try:
-                import fastembed  # noqa: F401
-
-                choice = "fastembed"
-            except ImportError:
-                choice = "hash"
+            choice = "hash"
     if choice == "openai":
         model = s.embedding_model or "text-embedding-3-small"
         return LangChainEmbedder(f"openai:{model}", s.embedding_dim or 1536)
@@ -98,8 +137,10 @@ def build_embedder(s: Settings) -> Embedder:
         dim = s.embedding_dim or 768
         model = s.embedding_model or "gemini-embedding-001"
         return LangChainEmbedder(f"google_genai:{model}", dim, output_dimensionality=dim)
+    if choice == "local":
+        return LocalEmbedder(s.embedding_model or "BAAI/bge-small-en-v1.5", s.device)
     if choice == "fastembed":
-        return FastEmbedder(s.embedding_model or "BAAI/bge-small-en-v1.5")
+        return FastEmbedder(s.embedding_model or "BAAI/bge-small-en-v1.5", s.device)
     if choice == "hash":
         log.info("using the offline hash embedder (lexical matching only)")
         return HashEmbedder(s.embedding_dim or 256)

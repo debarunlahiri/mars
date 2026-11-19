@@ -15,6 +15,7 @@ from ..core.config import Settings, get_settings
 from ..core.logging import get_logger, setup_logging
 from ..workflow.runtime import open_runtime
 from ..workflow.service import ResearchService
+from .documents import router as documents_router
 from .reports import router as reports_router
 from .routes import router
 from .security import RateLimiter
@@ -65,6 +66,7 @@ def create_app(settings: Settings | None = None, service: ResearchService | None
         openapi_tags=[
             {"name": "research", "description": "Run research jobs (blocking or streaming) and approve paused runs."},
             {"name": "reports", "description": "Stored reports and semantic search (needs storage configured)."},
+            {"name": "documents", "description": "Upload PDF/Word/PowerPoint/Excel/image/text files; research cites them."},
             {"name": "ops", "description": "Health."},
         ],
         lifespan=lifespan,
@@ -76,7 +78,7 @@ def create_app(settings: Settings | None = None, service: ResearchService | None
         app.add_middleware(
             CORSMiddleware,
             allow_origins=s.cors_origin_list,
-            allow_methods=["GET", "POST"],
+            allow_methods=["GET", "POST", "DELETE"],
             allow_headers=["*"],
         )
 
@@ -107,6 +109,7 @@ def create_app(settings: Settings | None = None, service: ResearchService | None
 
     app.include_router(router)
     app.include_router(reports_router)
+    app.include_router(documents_router)
     return app
 
 

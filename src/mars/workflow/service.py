@@ -78,14 +78,30 @@ class ResearchService:
         return clean_text(question).replace("\n", " ")
 
     async def start(
-        self, question: str, require_approval: bool = False, thread_id: str | None = None
+        self,
+        question: str,
+        require_approval: bool = False,
+        thread_id: str | None = None,
+        document_ids: list[str] | None = None,
+        web_search: bool | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
+        """``document_ids``: files attached to the question. They are read first and, unless
+        ``web_search`` is true, are the only evidence (so "explain this" explains the file)."""
         thread_id = thread_id or uuid.uuid4().hex
-        payload = {
-            "question": self.normalize_question(question),
-            "require_approval": require_approval,
-            "findings": [],
-        }
+        question = self.normalize_question(question)
+        payload: dict[str, Any] = {"require_approval": require_approval, "findings": []}
+        if document_ids and self.deps.docs is not None:
+            attached = await self.deps.docs.existing(document_ids)
+            if attached:
+                names = ", ".join(d.name for d in attached)
+                question = f"{question} (about the attached document{'s' if len(attached) > 1 else ''}: {names})"
+                payload["scope"] = {
+                    "document_ids": [d.id for d in attached],
+                    "web": bool(web_search) if web_search is not None else False,
+                }
+        elif web_search is not None:
+            payload["scope"] = {"document_ids": [], "web": web_search}
+        payload["question"] = question
         async for ev in self._stream(payload, thread_id):
             yield ev
 

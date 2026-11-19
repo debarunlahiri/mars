@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
-from ..prompts import PLANNER_SYSTEM, stamped
+from ..prompts import ATTACHED_NOTE, PLANNER_SYSTEM, stamped
 from ..schemas import PlanOut, ResearchTask
 from ..workflow.deps import Deps
 
 
-async def plan(deps: Deps, question: str) -> list[ResearchTask]:
+async def plan(deps: Deps, question: str, document_ids: list[str] | None = None) -> list[ResearchTask]:
     max_tasks = deps.settings.max_tasks
-    out = await deps.fast.structured(
-        PlanOut,
-        stamped(PLANNER_SYSTEM.format(max_tasks=max_tasks)),
-        f"Research question: {question}",
-    )
+    system = PLANNER_SYSTEM.format(max_tasks=max_tasks)
+    user = f"Research question: {question}"
+    if document_ids and deps.docs is not None:
+        system += ATTACHED_NOTE
+        user += f"\n\nAttached documents (name and opening text):\n{await deps.docs.outline(document_ids)}"
+    out = await deps.fast.structured(PlanOut, stamped(system), user)
     tasks: list[ResearchTask] = []
     seen: set[str] = set()
     for t in out.tasks:

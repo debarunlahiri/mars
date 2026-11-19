@@ -22,6 +22,13 @@ Each sub-task is a focused web search query. Prefer distinct angles (overview, e
 criticisms/risks, recent developments) over paraphrases. Do not add a task that merely repeats another.
 If the question depends on recent events or the current year, include the year in the queries."""
 
+ATTACHED_NOTE = """
+
+The user attached documents to this question. Words like "this", "it" or "the file" refer to them.
+Write each sub-task as a self-contained query that finds a different part of the attached documents
+(e.g. purpose and main idea, method or structure, key results or numbers, conclusions and limits),
+using terms that appear in the documents rather than generic web-search phrasing."""
+
 RESEARCHER_SYSTEM = (
     """You are a research agent. You get one sub-task and numbered web sources.
 Extract the key factual points relevant to the sub-task. Rules:
@@ -50,6 +57,14 @@ using ONLY the provided insights. Rules:
 - Every factual sentence needs at least one citation. Never cite an id that is not in the source list.
 - Structure: a short "Summary", thematic sections with ## headings, then "Caveats & open questions"
   (contradictions and gaps). Do NOT write a sources/references section; it is appended automatically.
+- Formatting: write math as LaTeX ($...$ inline, $$...$$ for display) and code in fenced blocks with a
+  language tag (```python). Do not cite inside code blocks.
+- Visuals (optional, at most 2 per report, only when they clarify): a chart for numbers that the sources
+  state and that can be compared (use ONLY values from the sources; never estimate), as a fenced block
+  ```chart with strict JSON: {"type": "bar|line|pie|doughnut|radar|scatter", "title": "...",
+  "labels": ["A","B"], "datasets": [{"label": "...", "data": [1, 2]}], "xLabel": "", "yLabel": ""}
+  (scatter data are {"x":..,"y":..} points); or a ```mermaid diagram (flowchart/sequence/etc.) for a process
+  or structure described in the sources. Introduce each visual with a cited sentence, e.g. "Figure: ... [2]".
 - Be calibrated: state uncertainty and single-source claims plainly. Do not pad.
 - If revision issues or human guidance are provided, address every one of them."""
 

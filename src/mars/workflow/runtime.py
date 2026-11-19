@@ -9,6 +9,7 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from ..core.config import Settings, get_settings
 from ..core.logging import get_logger
+from ..docs import open_documents
 from ..storage import open_storage
 from .service import ResearchService
 from .state import ALLOWED_TYPES
@@ -70,6 +71,10 @@ async def open_runtime(settings: Settings | None = None) -> Runtime:
             closers.append(storage.aclose)
         checkpointer = await _open_checkpointer(s, closers)
         service = ResearchService(s, checkpointer=checkpointer, storage=storage)
+        # The index is closed by deps.aclose() (via service.aclose()).
+        service.deps.docs = await open_documents(s, getattr(service.deps.fast, "describe_image", None))
+        if service.deps.docs and service.deps.docs.sync:
+            service.deps.docs.sync.start()  # scans now, then every MARS_DOCS_SYNC_INTERVAL seconds
     except BaseException:
         for close in reversed(closers):
             await close()

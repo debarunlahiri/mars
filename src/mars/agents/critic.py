@@ -19,6 +19,8 @@ def check_citations(markdown: str, sources: list[Source]) -> CitationCheck:
     valid = {s.id for s in sources}
     cited: set[int] = set()
     uncited = 0
+    # Code blocks and display math are not prose claims (and may contain "[1]"-like indexing).
+    markdown = re.sub(r"```.*?```|\$\$.*?\$\$", "", markdown, flags=re.S)
     for para in re.split(r"\n\s*\n", markdown):
         para = para.strip()
         if not para or para.startswith(("#", "```")):

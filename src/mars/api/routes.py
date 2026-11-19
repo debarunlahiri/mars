@@ -86,7 +86,7 @@ async def research(req: ResearchRequest, request: Request):
     `preview`; resume it with `POST /research/{thread_id}/approve`.
     """
     svc = _admit(request)
-    return _response(await run_to_completion(svc.start(req.question, req.require_approval)))
+    return _response(await run_to_completion(svc.start(req.question, req.require_approval, document_ids=req.document_ids, web_search=req.web_search)))
 
 
 @router.post(
@@ -98,7 +98,7 @@ async def research(req: ResearchRequest, request: Request):
 async def research_stream(req: ResearchRequest, request: Request):
     """Same as `POST /research`, but emits one Server-Sent Event per agent step."""
     svc = _admit(request)
-    return _sse(svc.start(req.question, req.require_approval))
+    return _sse(svc.start(req.question, req.require_approval, document_ids=req.document_ids, web_search=req.web_search))
 
 
 @router.post(
@@ -142,4 +142,7 @@ async def health(request: Request):
         "active_runs": request.app.state.service.active,
         "storage": "postgres" if s.database_url else ("sqlite" if s.storage_db else "off"),
         "persistent": bool(s.database_url or s.checkpoint_db),
+        "documents": request.app.state.service.deps.docs is not None,
+        "docs_sync": bool(s.docs_dir),
+        "web_search": s.web_search,
     }

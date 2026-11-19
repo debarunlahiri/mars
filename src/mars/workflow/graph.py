@@ -29,21 +29,23 @@ def default_checkpointer() -> MemorySaver:
     return MemorySaver(serde=JsonPlusSerializer(allowed_msgpack_modules=ALLOWED_TYPES))
 
 
-def _fan_out(tasks: list[ResearchTask], question: str) -> list[Send]:
-    return [Send("researcher", {"task": t, "question": question}) for t in tasks]
+def _fan_out(tasks: list[ResearchTask], state: ResearchState) -> list[Send]:
+    q, scope = state["question"], state.get("scope") or {}
+    return [Send("researcher", {"task": t, "question": q, "scope": scope}) for t in tasks]
 
 
 def build_graph(deps: Deps, checkpointer=None):
     max_drafts = deps.settings.max_revisions + 1
 
     async def planner_node(state: ResearchState):
-        return {"plan": await planner.plan(deps, state["question"]), "round": 0, "drafts": 0}
+        plan = await planner.plan(deps, state["question"], (state.get("scope") or {}).get("document_ids"))
+        return {"plan": plan, "round": 0, "drafts": 0}
 
     def route_after_planner(state: ResearchState):
-        return _fan_out(state["plan"], state["question"])
+        return _fan_out(state["plan"], state)
 
     async def researcher_node(payload: dict):
-        finding = await researcher.research(deps, payload["question"], payload["task"])
+        finding = await researcher.research(deps, payload["question"], payload["task"], payload.get("scope"))
         return {"findings": [finding]}
 
     async def analyst_node(state: ResearchState):
@@ -55,7 +57,7 @@ def build_graph(deps: Deps, checkpointer=None):
 
     def route_after_analyst(state: ResearchState):
         if state.get("followups"):  # cycle back for another parallel research round
-            return _fan_out(state["followups"], state["question"])
+            return _fan_out(state["followups"], state)
         if not state.get("sources") or not state["analysis"].insights:
             return "finalize"
         return "approval" if state.get("require_approval") else "writer"
@@ -193,7 +195,10 @@ def _warnings(findings, sources, dropped: int) -> list[str]:
             f"{dropped} claim(s) were discarded because their supporting quote could not be "
             "verified in the source text."
         )
-    domains = {urlsplit(s.url).hostname for s in sources}
-    if sources and len(domains) < 2:
-        out.append("All evidence comes from a single website; treat conclusions with caution.")
+    web = [s for s in sources if s.url.startswith(("http://", "https://"))]
+    domains = {urlsplit(s.url).hostname for s in web}
+    internal = len(sources) - len(web)
+    if sources and len(domains) + internal < 2:
+        what = "a single attached document" if internal else "a single website"
+        out.append(f"All evidence comes from {what}; treat conclusions with caution.")
     return out
